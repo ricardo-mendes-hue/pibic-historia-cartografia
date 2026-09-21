@@ -19,7 +19,7 @@ Os mapas interativos foram desenvolvidos em formato HTML para espacializar dados
 
 ## 🌐 Como Visualizar os Mapas
 Você pode acessar a versão interativa diretamente pelo navegador através do link:
-👉 [Acessar Mapas Interativos em HTML](https://ricardo-mendes-hue/pibic-historia-cartografia/)
+👉 [Acessar Mapas Interativos em HTML](https://github.com/ricardo-mendes-hue/pibic-historia-cartografia/)
 
 ---
 *Declaro que as informações e materiais contidos neste repositório correspondem aos resultados do relatório final do programa de Iniciação Científica.*
