@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bahia Colonial: Registros de Quilombos (AHU/BN)</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: #eef2f5;
+    }
+    header {
+      background-color: #242b30;
+      color: #f7f9fa;
+      padding: 12px 20px;
+      border-bottom: 3px solid #8b261e;
+      z-index: 1000;
+    }
+    header h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    header p {
+      font-size: 0.82rem;
+      color: #b0bec5;
+      margin-top: 3px;
+    }
+    #map {
+      flex: 1;
+      width: 100%;
+      background: #c8d7df;
+    }
+
+    /* Filtro de dessaturação para clarear e neutralizar as vias urbanas */
+    .mapa-limpo .leaflet-tile-pane {
+      filter: grayscale(85%) contrast(105%) brightness(108%);
+    }
+
+    /* Estilo dos Popups */
+    .leaflet-popup-content-wrapper {
+      border-radius: 4px;
+      border: 1px solid #c5bba8;
+      background-color: #fdfbf7;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .popup-content h3 {
+      font-size: 0.96rem;
+      color: #8b261e;
+      margin-bottom: 6px;
+      border-bottom: 1.5px solid #dcd5c5;
+      padding-bottom: 4px;
+    }
+    .popup-content ul {
+      list-style-type: none;
+      padding-left: 0;
+      margin: 6px 0 0 0;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .popup-content li {
+      font-size: 0.82rem;
+      margin-bottom: 5px;
+      padding: 6px 8px;
+      background-color: #f4efe6;
+      border-left: 3px solid #8b261e;
+      line-height: 1.35;
+      color: #2b2b2b;
+    }
+    .popup-content li strong {
+      display: block;
+      color: #111;
+      font-size: 0.8rem;
+    }
+    .subfonte {
+      font-size: 0.72rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Mapeamento: Quilombos e Mocambos na Capitania da Bahia</h1>
+    <p>Área territorial do Estado em evidência. Passe o mouse para ver a localidade e clique para acessar as fontes documentais.</p>
+  </header>
+
+  <div id="map" class="mapa-limpo"></div>
+
+  <!-- Padrão SVG para hachurar fora da Bahia -->
+  <svg width="0" height="0" style="position: absolute;">
+    <defs>
+      <pattern id="hachura" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="10" stroke="#5a6872" stroke-width="1.6" />
+      </pattern>
+    </defs>
+  </svg>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <script>
+    // Configuração inicial focada no Estado da Bahia
+    const map = L.map('map', {
+      center: [-12.50, -41.00], // Centro aproximado da Bahia
+      zoom: 6,
+      minZoom: 5,
+      maxZoom: 12
+    });
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ',
+      maxZoom: 19
+    }).addTo(map);
+
+    // Máscara com hachura externa via GeoJSON do IBGE (Código 29 = Bahia)
+    const urlGeoJsonBahia = 'https://servicodados.ibge.gov.br/api/v3/malhas/estados/29?formato=application/vnd.geo+json';
+
+    fetch(urlGeoJsonBahia)
+      .then(res => res.json())
+      .then(geojson => {
+        const outerWorld = [
+          [-90, -180],
+          [-90, 180],
+          [90, 180],
+          [90, -180],
+          [-90, -180]
+        ];
+
+        const bahiaGeometry = geojson.features[0].geometry;
+        let holes = [];
+
+        if (bahiaGeometry.type === "Polygon") {
+          holes.push(bahiaGeometry.coordinates[0].map(coord => [coord[1], coord[0]]));
+        } else if (bahiaGeometry.type === "MultiPolygon") {
+          bahiaGeometry.coordinates.forEach(poly => {
+            holes.push(poly[0].map(coord => [coord[1], coord[0]]));
+          });
+        }
+
+        const mascaraExterna = L.polygon([outerWorld, ...holes], {
+          fillColor: '#8898a6',
+          fillOpacity: 0.55,
+          color: '#34495e',
+          weight: 2,
+          interactive: false
+        }).addTo(map);
+
+        setTimeout(() => {
+          const el = mascaraExterna.getElement();
+          if (el) {
+            el.setAttribute('fill', 'url(#hachura)');
+            el.setAttribute('fill-opacity', '0.65');
+          }
+        }, 80);
+
+        // Borda estadual
+        L.geoJSON(geojson, {
+          style: {
+            color: '#8b261e',
+            weight: 1.5,
+            fill: false,
+            dashArray: '5, 5',
+            interactive: false
+          }
+        }).addTo(map);
+      })
+      .catch(err => console.error(err));
+
+    // Base de dados contendo EXCLUSIVAMENTE os itens NÃO destacados (Interior e Recôncavo)
+    // Coordenadas aproximadas baseadas nos municípios históricos atuais
+    const pontosQuilombos = [
+      {
+        nome: "Cairú",
+        coordenadas: [-13.948, -39.027],
+        documentos: [
+          { colecao: "Coleção Bahia avulsos", doc: "Cx. 16, D. 1376" }
+        ]
+      },
+      {
+        nome: "Passé",
+        coordenadas: [-12.695, -38.573],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 109, D. 21.243-21.244" }
+        ]
+      },
+      {
+        nome: "Andaraí",
+        coordenadas: [-12.809, -41.317],
+        documentos: [
+          { colecao: "Coleção Bahia avulsos", doc: "Cx. 212, D. 14951" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 92, D. 17955-17976" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 93, D. 18173" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 34, página 507" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 34, página 508" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 36, página 16" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 36, página 85" }
+        ]
+      },
+      {
+        nome: "Orobó",
+        coordenadas: [-12.285, -40.493], // Região de Itaberaba / Ruy Barbosa
+        documentos: [
+          { colecao: "Coleção Bahia avulsos", doc: "Cx. 212, D. 14951" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 92, D. 17955-17976" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 93, D. 18173" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 34, página 507" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 34, página 508" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 36, página 16" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 36, página 85" }
+        ]
+      },
+      {
+        nome: "Jeremoabo",
+        coordenadas: [-10.075, -38.480],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 173" }
+        ]
+      },
+      {
+        nome: "Sergipe",
+        coordenadas: [-11.014, -37.206], // Extremo norte / Antiga Capitania
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 226" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 271" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 351" }
+        ]
+      },
+      {
+        nome: "Jaguaripe",
+        coordenadas: [-13.111, -38.896],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 259" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 71" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 310" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 18, página 37" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 68, página 63" }
+        ]
+      },
+      {
+        nome: "Mata de São João",
+        coordenadas: [-12.529, -38.298],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 4, página 373" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 147, D. 29.438 – 29.439" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.213-30.214" }
+        ]
+      },
+      {
+        nome: "Cachoeira",
+        coordenadas: [-12.584, -38.966],
+        documentos: [
+          { colecao: "Coleção Bahia avulsos", doc: "Cx. 26, D. 2365" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 5, página 340" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 129" }
+        ]
+      },
+      {
+        nome: "Inhambupe",
+        coordenadas: [-11.782, -38.351],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 5, página 342" }
+        ]
+      },
+      {
+        nome: "Boipeba",
+        coordenadas: [-13.585, -38.924],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 5, página 343" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 306" }
+        ]
+      },
+      {
+        nome: "Itaparica",
+        coordenadas: [-12.888, -38.678],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.215-30.216" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 5, página 343" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 23, página 122" }
+        ]
+      },
+      {
+        nome: "Jacuípe",
+        coordenadas: [-11.805, -39.390], // Riachão do Jacuípe / Bacia do Jacuípe
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 55" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 308" }
+        ]
+      },
+      {
+        nome: "Jacobina",
+        coordenadas: [-11.181, -40.518],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 386" }
+        ]
+      },
+      {
+        nome: "Itapicuru",
+        coordenadas: [-11.311, -38.225],
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 10, página 580" }
+        ]
+      },
+      {
+        nome: "Santo Amaro",
+        coordenadas: [-12.545, -38.713],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 103, D. 20090-20091" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.286-30.287" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 15, página 116" }
+        ]
+      },
+      {
+        nome: "Saubara",
+        coordenadas: [-12.737, -38.765],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 117, D. 23.101-23.102" }
+        ]
+      },
+      {
+        nome: "Vila de Abrantes",
+        coordenadas: [-12.809, -38.232],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 118, D. 23.268-23.269" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 119, D. 23.523-23.524" }
+        ]
+      },
+      {
+        nome: "Vila de Água Fria",
+        coordenadas: [-11.870, -38.577],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.271-30.272" }
+        ]
+      },
+      {
+        nome: "Santo Amaro de Ipitanga (Lauro de Freitas)",
+        coordenadas: [-12.894, -38.326],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.294-30.295" }
+        ]
+      },
+      {
+        nome: "Caeté",
+        coordenadas: [-14.073, -42.475], // Caetité
+        documentos: [
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 108, página 67 a 102" }
+        ]
+      }
+    ];
+
+    const markerOptions = {
+      radius: 7,
+      fillColor: "#b02a1e",
+      color: "#ffffff",
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.95
+    };
+
+    // Plotagem dos marcadores com interação
+    pontosQuilombos.forEach(item => {
+      const marker = L.circleMarker(item.coordenadas, markerOptions).addTo(map);
+
+      // Hover: exibe apenas o local
+      marker.bindTooltip(`<strong>${item.nome}</strong>`, {
+        direction: 'top',
+        offset: [0, -8]
+      });
+
+      // Clique: exibe a lista formatada de manuscritos e volumes
+      let listaDocs = "";
+      item.documentos.forEach(d => {
+        listaDocs += `
+          <li>
+            <span class="subfonte">${d.colecao}</span>
+            <strong>${d.doc}</strong>
+          </li>
+        `;
+      });
+
+      const popupHtml = `
+        <div class="popup-content">
+          <h3>${item.nome}</h3>
+          <strong style="font-size: 0.78rem; color: #555;">Documentos Relacionados:</strong>
+          <ul>${listaDocs}</ul>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, { maxWidth: 310 });
+    });
+  </script>
+</body>
+</html>

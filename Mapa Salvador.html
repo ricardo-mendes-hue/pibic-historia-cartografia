@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Salvador Setecentista: Registros de Quilombos (AHU)</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: #eef2f5;
+    }
+    header {
+      background-color: #242b30;
+      color: #f7f9fa;
+      padding: 12px 20px;
+      border-bottom: 3px solid #8b261e;
+      z-index: 1000;
+    }
+    header h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    header p {
+      font-size: 0.82rem;
+      color: #b0bec5;
+      margin-top: 3px;
+    }
+    #map {
+      flex: 1;
+      width: 100%;
+      background: #c8d7df;
+    }
+
+    /* Filtro de dessaturação para clarear e neutralizar as vias urbanas */
+    .mapa-limpo .leaflet-tile-pane {
+      filter: grayscale(85%) contrast(105%) brightness(108%);
+    }
+
+    /* Estilo dos Popups */
+    .leaflet-popup-content-wrapper {
+      border-radius: 4px;
+      border: 1px solid #c5bba8;
+      background-color: #fdfbf7;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .popup-content h3 {
+      font-size: 0.96rem;
+      color: #8b261e;
+      margin-bottom: 6px;
+      border-bottom: 1.5px solid #dcd5c5;
+      padding-bottom: 4px;
+    }
+    .popup-content ul {
+      list-style-type: none;
+      padding-left: 0;
+      margin: 6px 0 0 0;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .popup-content li {
+      font-size: 0.82rem;
+      margin-bottom: 5px;
+      padding: 6px 8px;
+      background-color: #f4efe6;
+      border-left: 3px solid #8b261e;
+      line-height: 1.35;
+      color: #2b2b2b;
+    }
+    .popup-content li strong {
+      display: block;
+      color: #111;
+      font-size: 0.8rem;
+    }
+    .subfonte {
+      font-size: 0.72rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Mapeamento: Registros de Quilombos e Mocambos na Salvador Colonial</h1>
+    <p>Passe o mouse para ver a localidade. Clique no ponto para acessar as fontes documentais.</p>
+  </header>
+
+  <div id="map" class="mapa-limpo"></div>
+
+  <!-- Padrão SVG para hachurar fora de Salvador -->
+  <svg width="0" height="0" style="position: absolute;">
+    <defs>
+      <pattern id="hachura" width="10" height="10" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+        <line x1="0" y1="0" x2="0" y2="10" stroke="#5a6872" stroke-width="1.6" />
+      </pattern>
+    </defs>
+  </svg>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <script>
+    const map = L.map('map', {
+      center: [-12.93, -38.45],
+      zoom: 12,
+      minZoom: 11,
+      maxZoom: 16,
+      maxBounds: [
+        [-13.20, -38.80],
+        [-12.60, -38.15]
+      ]
+    });
+
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles © Esri — Esri, DeLorme, NAVTEQ',
+      maxZoom: 16
+    }).addTo(map);
+
+    // Máscara com hachura externa via GeoJSON do IBGE
+    const urlGeoJsonSalvador = 'https://servicodados.ibge.gov.br/api/v3/malhas/municipios/2927408?formato=application/vnd.geo+json';
+
+    fetch(urlGeoJsonSalvador)
+      .then(res => res.json())
+      .then(geojson => {
+        const outerWorld = [
+          [-90, -180],
+          [-90, 180],
+          [90, 180],
+          [90, -180],
+          [-90, -180]
+        ];
+
+        const salvadorGeometry = geojson.features[0].geometry;
+        let holes = [];
+
+        if (salvadorGeometry.type === "Polygon") {
+          holes.push(salvadorGeometry.coordinates[0].map(coord => [coord[1], coord[0]]));
+        } else if (salvadorGeometry.type === "MultiPolygon") {
+          salvadorGeometry.coordinates.forEach(poly => {
+            holes.push(poly[0].map(coord => [coord[1], coord[0]]));
+          });
+        }
+
+        const mascaraExterna = L.polygon([outerWorld, ...holes], {
+          fillColor: '#8898a6',
+          fillOpacity: 0.55,
+          color: '#34495e',
+          weight: 2,
+          interactive: false
+        }).addTo(map);
+
+        setTimeout(() => {
+          const el = mascaraExterna.getElement();
+          if (el) {
+            el.setAttribute('fill', 'url(#hachura)');
+            el.setAttribute('fill-opacity', '0.65');
+          }
+        }, 80);
+
+        L.geoJSON(geojson, {
+          style: {
+            color: '#8b261e',
+            weight: 1.5,
+            fill: false,
+            dashArray: '5, 5',
+            interactive: false
+          }
+        }).addTo(map);
+      })
+      .catch(err => console.error(err));
+
+    // Base de dados contendo EXCLUSIVAMENTE os itens destacados em amarelo nas tabelas
+    const pontosQuilombos = [
+      {
+        nome: "Itapuã / Abaeté",
+        coordenadas: [-12.9460, -38.3562],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 35, D. 6449-6456" },
+          { colecao: "Anais da Biblioteca Nacional", doc: "Volume 108, página 67 a 102" }
+        ]
+      },
+      {
+        nome: "Itapagipe / Ribeira",
+        coordenadas: [-12.9125, -38.4975],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 146, D. 29.376 – 29.377" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 118, D. 23.216-23.217" }
+        ]
+      },
+      {
+        nome: "Vitória",
+        coordenadas: [-12.9928, -38.5255],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 77, D. 14974-14975" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 83, D. 16285-16287" }
+        ]
+      },
+      {
+        nome: "Rio Vermelho",
+        coordenadas: [-13.0125, -38.4912],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 67, D. 12917-12920" }
+        ]
+      },
+      {
+        nome: "Paripe",
+        coordenadas: [-12.8252, -38.4795],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 102, D. 19887-19888" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 104, D. 20212-20214" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 109, D. 21.209-21.210" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 111, D. 21.850-21.851" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 150, D. 30.070-30.071" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 150, D. 30.120-30.121" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.233-30.234" }
+        ]
+      },
+      {
+        nome: "Centro Histórico",
+        coordenadas: [-12.9730, -38.5085],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.215-30.216" }
+        ]
+      },
+      {
+        nome: "Cidade Baixa (Freguesia do Pilar)",
+        coordenadas: [-12.9685, -38.5110],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 75, D. 14520-14521" }
+        ]
+      },
+      {
+        nome: "Pirajá",
+        coordenadas: [-12.8950, -38.4680],
+        documentos: [
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 110, D. 21.626-21.628" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.298-30.302" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.332-30.333" },
+          { colecao: "Coleção Castro e Almeida", doc: "Cx. 151, D. 30.327-30.329" }
+        ]
+      }
+    ];
+
+    const markerOptions = {
+      radius: 8,
+      fillColor: "#b02a1e",
+      color: "#ffffff",
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.95
+    };
+
+    // Plotagem dos marcadores com interação
+    pontosQuilombos.forEach(item => {
+      const marker = L.circleMarker(item.coordenadas, markerOptions).addTo(map);
+
+      // Hover: exibe apenas o local
+      marker.bindTooltip(`<strong>${item.nome}</strong>`, {
+        direction: 'top',
+        offset: [0, -8]
+      });
+
+      // Clique: exibe a lista formatada de manuscritos e volumes
+      let listaDocs = "";
+      item.documentos.forEach(d => {
+        listaDocs += `
+          <li>
+            <span class="subfonte">${d.colecao}</span>
+            <strong>${d.doc}</strong>
+          </li>
+        `;
+      });
+
+      const popupHtml = `
+        <div class="popup-content">
+          <h3>${item.nome}</h3>
+          <strong style="font-size: 0.78rem; color: #555;">Documentos Relacionados:</strong>
+          <ul>${listaDocs}</ul>
+        </div>
+      `;
+
+      marker.bindPopup(popupHtml, { maxWidth: 310 });
+    });
+  </script>
+</body>
+</html>
